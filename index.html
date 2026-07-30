@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dinner Order</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#16241E;
+    --bg-2:#1D2F26;
+    --card:#FBF6EA;
+    --ink:#22201C;
+    --muted:#8B8577;
+    --accent:#E2A63B;
+    --accent-ink:#4A3410;
+    --green:#4F7A5B;
+    --warn:#C1542C;
+    --line:rgba(34,32,28,0.12);
+    --radius:22px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(1200px 600px at 50% -10%, var(--bg-2), var(--bg) 60%);
+    color:var(--card);
+    font-family:'Work Sans', sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+    padding-bottom:60px;
+  }
+  .wrap{max-width:520px;margin:0 auto;padding:28px 18px 10px;}
+
+  /* Header / tiffin handle */
+  .handle-svg{display:block;margin:0 auto 6px;width:64px;height:34px;}
+  header h1{
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-size:clamp(28px,7vw,36px);
+    text-align:center;
+    margin:0 0 4px;
+    letter-spacing:-0.01em;
+    color:var(--card);
+  }
+  header p.sub{
+    text-align:center;
+    margin:0 0 22px;
+    color:#C7C2B4;
+    font-size:14.5px;
+    line-height:1.5;
+  }
+  header p.sub b{color:var(--accent);font-weight:600;}
+
+  /* Name picker */
+  .name-bar{
+    background:var(--card);
+    color:var(--ink);
+    border-radius:18px;
+    padding:14px 16px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    margin-bottom:20px;
+    box-shadow:0 10px 30px rgba(0,0,0,0.25);
+  }
+  .name-bar label{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:var(--muted);
+    white-space:nowrap;
+  }
+  .name-bar select{
+    flex:1;
+    border:none;
+    background:transparent;
+    font-family:'Work Sans', sans-serif;
+    font-weight:600;
+    font-size:16px;
+    color:var(--ink);
+    padding:6px 4px;
+  }
+  .name-bar select:focus{outline:2px solid var(--accent);border-radius:8px;}
+
+  /* Tiffin stack */
+  .stack{position:relative; padding-left:26px;}
+  .stack::before{
+    content:"";
+    position:absolute;
+    left:9px; top:6px; bottom:20px;
+    width:2px;
+    background:linear-gradient(to bottom, var(--accent), rgba(226,166,59,0.15));
+    border-radius:2px;
+  }
+  .tier{
+    position:relative;
+    margin-bottom:18px;
+  }
+  .tier::before{
+    content:"";
+    position:absolute;
+    left:-26px; top:26px;
+    width:18px;height:18px;
+    border-radius:50%;
+    background:var(--bg);
+    border:3px solid var(--accent);
+  }
+  .tier.locked::before{border-color:var(--muted);}
+  .tier.done::before{background:var(--accent); border-color:var(--accent);}
+  /* Single-day view: no spine or dot to draw, so let the card use the full width */
+  .stack.single{padding-left:0;}
+  .stack.single::before{display:none;}
+  .stack.single .tier{margin-bottom:0;}
+  .stack.single .tier::before{display:none;}
+
+  /* Shown when no dinner is currently open for orders */
+  .empty{
+    background:var(--card);
+    border-radius:var(--radius);
+    padding:30px 24px;
+    text-align:center;
+  }
+  .empty h2{
+    font-family:'Fraunces', Georgia, serif;
+    font-size:19px; font-weight:600;
+    margin:0 0 8px; color:var(--ink);
+  }
+  .empty p{margin:0; font-size:13.5px; color:var(--muted); line-height:1.6;}
+  .empty p b{color:var(--ink); font-weight:600;}
+  .empty .kicker{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10.5px; text-transform:uppercase; letter-spacing:0.14em;
+    color:var(--accent); margin-bottom:12px;
+  }
+
+  .card{
+    background:var(--card);
+    color:var(--ink);
+    border-radius:var(--radius);
+    padding:20px 20px 18px;
+    box-shadow:0 14px 34px rgba(0,0,0,0.28);
+  }
+  .card-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    gap:10px;
+    margin-bottom:4px;
+  }
+  .day-label{
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-size:22px;
+  }
+  .day-date{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    color:var(--muted);
+  }
+  .badge{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10.5px;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    padding:4px 9px;
+    border-radius:100px;
+    white-space:nowrap;
+  }
+  .badge.open{background:rgba(79,122,91,0.15); color:var(--green);}
+  .badge.locked{background:rgba(139,133,119,0.18); color:var(--muted);}
+  .badge.saved{background:rgba(226,166,59,0.22); color:var(--accent-ink);}
+
+  .dish{
+    font-size:14px;
+    line-height:1.55;
+    color:#4B463D;
+    margin:8px 0 16px;
+  }
+
+  .group{margin-bottom:14px;}
+  .group-label{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10.5px;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:var(--muted);
+    margin-bottom:8px;
+    display:block;
+  }
+  .pills{display:flex; flex-wrap:wrap; gap:8px;}
+  .pill{
+    border:1.5px solid var(--line);
+    background:transparent;
+    color:var(--ink);
+    font-family:'Work Sans', sans-serif;
+    font-weight:500;
+    font-size:13.5px;
+    padding:8px 14px;
+    border-radius:100px;
+    cursor:pointer;
+    transition:all .15s ease;
+  }
+  .pill:hover{border-color:var(--accent);}
+  .pill.active{
+    background:var(--ink);
+    border-color:var(--ink);
+    color:var(--card);
+  }
+  .pill:disabled{opacity:.4; cursor:not-allowed;}
+
+  /* Meal-type row sits above everything and gates what's shown below it */
+  .pill.meal{font-weight:600;}
+  .pill.meal.active{background:var(--green); border-color:var(--green); color:#fff;}
+  .group-hint{
+    font-family:'Work Sans', sans-serif;
+    font-size:11.5px;
+    color:var(--muted);
+    font-weight:400;
+    text-transform:none;
+    letter-spacing:0;
+    margin-left:6px;
+  }
+  .everyday-only{
+    border-left:2px solid rgba(34,32,28,0.10);
+    padding-left:14px;
+    margin:14px 0 0;
+  }
+  .everyday-only[hidden]{display:none;}
+  .specials-note{
+    display:flex; align-items:center; gap:8px;
+    background:rgba(79,122,91,0.10);
+    border-radius:14px;
+    padding:11px 14px;
+    margin-top:14px;
+    font-size:13px;
+    color:#3D5E47;
+    line-height:1.45;
+  }
+  .specials-note[hidden]{display:none;}
+  .divider{height:1px;background:var(--line);margin:16px 0 14px;}
+
+  .card-foot{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    margin-top:14px;
+  }
+  .deadline{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color:var(--muted);
+  }
+  .save-btn{
+    font-family:'Work Sans', sans-serif;
+    font-weight:600;
+    font-size:14px;
+    border:none;
+    background:var(--accent);
+    color:var(--accent-ink);
+    padding:10px 18px;
+    border-radius:100px;
+    cursor:pointer;
+    transition:transform .12s ease, opacity .12s ease;
+  }
+  .save-btn:active{transform:scale(0.96);}
+  .save-btn:disabled{background:#DDD8C8; color:#9A9484; cursor:not-allowed;}
+  .save-btn.saved{background:var(--green); color:#fff;}
+
+  .locked-note{
+    font-size:13px;
+    color:var(--muted);
+    font-style:italic;
+  }
+
+  .toast{
+    position:fixed; left:50%; bottom:22px; transform:translateX(-50%) translateY(20px);
+    background:var(--ink); color:var(--card);
+    padding:11px 18px; border-radius:100px;
+    font-size:13.5px; font-weight:500;
+    opacity:0; transition:all .25s ease;
+    pointer-events:none;
+    max-width:90vw; text-align:center;
+    z-index:50;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+  footer{
+    max-width:520px; margin:26px auto 0; padding:0 18px;
+    text-align:center; font-size:12px; color:#8D8779; line-height:1.6;
+  }
+  .skeleton{
+    background:var(--card); border-radius:var(--radius); height:150px;
+    margin-bottom:18px; opacity:.5;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <svg class="handle-svg" viewBox="0 0 64 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M16 30 C16 12, 48 12, 48 30" stroke="#E2A63B" stroke-width="3.5" stroke-linecap="round"/>
+      <circle cx="16" cy="30" r="3" fill="#E2A63B"/>
+      <circle cx="48" cy="30" r="3" fill="#E2A63B"/>
+    </svg>
+    <h1>Dinner Order</h1>
+    <p class="sub">One dinner at a time. Orders close at <b>10 PM IST</b> the night before, and the kitchen list goes out at <b>11 PM IST</b>.</p>
+  </header>
+
+  <div class="name-bar">
+    <label for="nameSelect">I am</label>
+    <select id="nameSelect">
+      <option value="">Choose your name…</option>
+    </select>
+  </div>
+
+  <div id="stack" class="stack">
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+  </div>
+</div>
+
+<footer>
+  Menu items are set by whoever runs this list — check back each week.<br>
+  Trouble saving? Ask the organiser to check the sheet connection.
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ====== CONFIGURE THIS ======
+const API_URL = "https://script.google.com/macros/s/AKfycbyxhdH8ZGx82krLpUrxffPewpe-kJ4bi2SD36s-iiXh-aVvUtL-2Fe8du4JO15UoJiG/exec";
+// =============================
+
+const stackEl = document.getElementById('stack');
+const nameSelect = document.getElementById('nameSelect');
+const toastEl = document.getElementById('toast');
+
+let STATE = null;        // last fetched state from server
+let EVERYDAY = 'Everyday Indian';
+let dirty = false;       // true while there are unsaved selections on screen
+
+function showToast(msg){
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  setTimeout(()=>toastEl.classList.remove('show'), 2600);
+}
+
+function getSelectedName(){ return nameSelect.value; }
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function fetchState(){
+  const name = getSelectedName();
+  const url = API_URL + '?action=state' + (name ? ('&name=' + encodeURIComponent(name)) : '');
+  const res = await fetch(url);
+  return await res.json();
+}
+
+function renderNames(names){
+  const current = nameSelect.value;
+  nameSelect.innerHTML = '<option value="">Choose your name…</option>' +
+    names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+  if (current && names.indexOf(current) !== -1) nameSelect.value = current;
+}
+
+// A day counts as complete if it's Specials, or Everyday Indian with a protein and >=1 carb.
+function isComplete(mine){
+  if (!mine || !mine.mealType) return false;
+  if (mine.mealType !== EVERYDAY) return true;
+  return !!mine.protein && !!(mine.carbs && mine.carbs.length);
+}
+
+function render(state){
+  STATE = state;
+  EVERYDAY = state.everydayLabel || EVERYDAY;
+  const mealTypes = state.mealTypes || [EVERYDAY];
+  renderNames(state.names || []);
+  dirty = false;
+
+  const days = state.days || [];
+  stackEl.className = 'stack single';
+
+  if (!days.length){
+    const configured = state.configuredCount || 0;
+    const nextUp = state.nextUp;
+    let body;
+    if (nextUp){
+      body = '<b>' + escapeHtml(nextUp.label) + '</b> (' + escapeHtml(nextUp.dateDisplay) + ') opens for orders at ' +
+             (nextUp.opensIsToday ? '<b>10 PM tonight</b>.' : '<b>10 PM on ' + escapeHtml(nextUp.opensDisplay) + '</b>.') +
+             '<br>You\'ll have 24 hours to pick once it does.';
+    } else if (configured === 0){
+      body = 'The menu hasn\'t been set up yet. Check back once the organiser adds this week\'s dinners.';
+    } else {
+      body = 'Every dinner on the list has closed' +
+             (state.lastConfiguredDate ? ' — the last was ' + escapeHtml(state.lastConfiguredDate) : '') +
+             '. Next week\'s menu isn\'t up yet.';
+    }
+    stackEl.innerHTML =
+      '<div class="empty">' +
+        '<div class="kicker">' + (nextUp ? 'Opens soon' : 'Nothing open right now') + '</div>' +
+        '<h2>No dinner is taking orders</h2>' +
+        '<p>' + body + '</p>' +
+      '</div>';
+    return;
+  }
+
+  stackEl.innerHTML = '';
+  days.forEach(day => {
+    const mine = day.mine || {};
+    const mineMeal = mine.mealType || '';
+    const mineProtein = mine.protein || '';
+    const mineCarbs = mine.carbs || [];
+    const done = isComplete(mine);
+    const hasName = !!getSelectedName();
+    const dis = day.locked ? 'disabled' : '';
+
+    const tier = document.createElement('div');
+    tier.className = 'tier' + (day.locked ? ' locked' : '') + (done ? ' done' : '');
+
+    const mealPills = mealTypes.map(m =>
+      `<button class="pill meal ${m===mineMeal?'active':''}" data-group="meal" data-value="${escapeHtml(m)}" ${dis}>${escapeHtml(m)}</button>`
+    ).join('');
+
+    const proteinPills = (day.proteins||[]).map(x =>
+      `<button class="pill ${x===mineProtein?'active':''}" data-group="protein" data-value="${escapeHtml(x)}" ${dis}>${escapeHtml(x)}</button>`
+    ).join('');
+
+    const carbPills = (day.carbs||[]).map(x =>
+      `<button class="pill ${mineCarbs.indexOf(x)!==-1?'active':''}" data-group="carb" data-value="${escapeHtml(x)}" ${dis}>${escapeHtml(x)}</button>`
+    ).join('');
+
+    const showEveryday = mineMeal === EVERYDAY;
+    const showSpecials = !!mineMeal && mineMeal !== EVERYDAY;
+
+    tier.innerHTML = `
+      <div class="card" data-day="${escapeHtml(day.key)}">
+        <div class="card-top">
+          <div>
+            <div class="day-label">${escapeHtml(day.label)}</div>
+            <div class="day-date">${escapeHtml(day.dateDisplay || day.date)}</div>
+          </div>
+          <div class="badge ${day.locked ? 'locked' : (done ? 'saved' : 'open')}">
+            ${day.locked ? 'Closed' : (done ? 'Saved' : 'Open')}
+          </div>
+        </div>
+        <div class="dish">${escapeHtml(day.dish)}</div>
+
+        <div class="group">
+          <span class="group-label">Meal</span>
+          <div class="pills" data-group-wrap="meal">${mealPills}</div>
+        </div>
+
+        <div class="everyday-only" data-everyday ${showEveryday ? '' : 'hidden'}>
+          <div class="group">
+            <span class="group-label">Protein</span>
+            <div class="pills" data-group-wrap="protein">${proteinPills || '<span class="locked-note">No options set for this day.</span>'}</div>
+          </div>
+          <div class="group" style="margin-bottom:0;">
+            <span class="group-label">Carb <span class="group-hint">pick one or both</span></span>
+            <div class="pills" data-group-wrap="carb">${carbPills || '<span class="locked-note">No options set for this day.</span>'}</div>
+          </div>
+        </div>
+
+        <div class="specials-note" data-specials ${showSpecials ? '' : 'hidden'}>
+          Specials come as they are — no protein or carb to pick.
+        </div>
+
+        <div class="divider"></div>
+        <div class="card-foot">
+          <span class="deadline">${day.locked
+              ? 'Locked — cutoff passed'
+              : (day.cutoffIsToday
+                  ? 'Closes 10 PM IST tonight'
+                  : 'Closes 10 PM IST, ' + escapeHtml(day.cutoffDisplay || ''))}</span>
+          <button class="save-btn" data-day="${escapeHtml(day.key)}" ${day.locked || !hasName ? 'disabled' : ''}>
+            ${day.locked ? 'Closed' : (done ? 'Saved ✓' : 'Save')}
+          </button>
+        </div>
+        ${!hasName ? '<div class="locked-note" style="margin-top:10px;">Choose your name above to select.</div>' : ''}
+      </div>
+    `;
+    stackEl.appendChild(tier);
+  });
+
+  wireCard();
+}
+
+function wireCard(){
+  stackEl.querySelectorAll('.pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.disabled) return;
+      const group = btn.dataset.group;
+      const card = btn.closest('.card');
+      const wrap = btn.closest('[data-group-wrap]');
+
+      if (group === 'carb') {
+        // Multi-select: toggle this one, leave the others alone.
+        btn.classList.toggle('active');
+      } else {
+        // Single-select: meal type and protein.
+        wrap.querySelectorAll('.pill').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      }
+
+      if (group === 'meal') {
+        const isEveryday = btn.dataset.value === EVERYDAY;
+        card.querySelector('[data-everyday]').hidden = !isEveryday;
+        card.querySelector('[data-specials]').hidden = isEveryday;
+        if (!isEveryday) {
+          // Switching to Specials clears any protein/carb picks so nothing stale gets sent.
+          card.querySelectorAll('[data-group-wrap="protein"] .pill, [data-group-wrap="carb"] .pill')
+            .forEach(b => b.classList.remove('active'));
+        }
+      }
+
+      dirty = true;
+      const saveBtn = card.querySelector('.save-btn');
+      saveBtn.classList.remove('saved');
+      saveBtn.textContent = 'Save';
+    });
+  });
+
+  stackEl.querySelectorAll('.save-btn').forEach(btn => {
+    btn.addEventListener('click', () => saveDay(btn));
+  });
+}
+
+async function saveDay(btn){
+  const dayKey = btn.dataset.day;
+  const card = btn.closest('.card');
+  const name = getSelectedName();
+
+  const mealEl = card.querySelector('[data-group-wrap="meal"] .pill.active');
+  if (!name){ showToast('Choose your name first'); return; }
+  if (!mealEl){ showToast('Pick a meal first'); return; }
+
+  const mealType = mealEl.dataset.value;
+  let protein = '';
+  let carbs = [];
+
+  if (mealType === EVERYDAY){
+    const pEl = card.querySelector('[data-group-wrap="protein"] .pill.active');
+    carbs = Array.from(card.querySelectorAll('[data-group-wrap="carb"] .pill.active'))
+      .map(b => b.dataset.value);
+    if (!pEl){ showToast('Pick a protein'); return; }
+    if (!carbs.length){ showToast('Pick rice, roti, or both'); return; }
+    protein = pEl.dataset.value;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' }, // avoids CORS preflight on Apps Script
+      body: JSON.stringify({ action:'submit', name, dayKey, mealType, protein, carbs })
+    });
+    const data = await res.json();
+    if (data.ok){
+      dirty = false;
+      btn.classList.add('saved');
+      btn.textContent = 'Saved ✓';
+      btn.disabled = false;
+      showToast('Saved for ' + name);
+      loadState();
+    } else {
+      showToast(data.error || 'Could not save — try again');
+      btn.disabled = false;
+      btn.textContent = 'Save';
+    }
+  } catch (err){
+    showToast('Network error — check connection');
+    btn.disabled = false;
+    btn.textContent = 'Save';
+  }
+}
+
+async function loadState(){
+  try {
+    render(await fetchState());
+  } catch(err){
+    stackEl.innerHTML = '<p style="color:#fff;text-align:center;">Could not load the menu. Please refresh.</p>';
+  }
+}
+
+nameSelect.addEventListener('change', loadState);
+
+loadState();
+// Refresh every 60s so the lock state updates live near 10 PM —
+// but never while there are unsaved picks on screen, or we'd wipe them.
+setInterval(() => { if (!dirty) loadState(); }, 60000);
+</script>
+</body>
+</html>
