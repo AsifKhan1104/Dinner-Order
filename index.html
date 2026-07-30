@@ -242,6 +242,52 @@
   .specials-note[hidden]{display:none;}
   .divider{height:1px;background:var(--line);margin:16px 0 14px;}
 
+  /* ---- Live order roster ---- */
+  .roster{margin:18px 0 0;}
+  .roster-card{
+    background:var(--card);
+    border-radius:var(--radius);
+    padding:20px 20px 18px;
+  }
+  .roster-head{
+    display:flex; align-items:baseline; justify-content:space-between;
+    margin-bottom:14px;
+  }
+  .roster-count{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px; color:var(--accent); font-weight:500;
+  }
+  .roster-list{list-style:none; margin:0; padding:0;}
+  .roster-list li{
+    display:flex; align-items:baseline; gap:10px;
+    padding:7px 0;
+    border-bottom:1px solid var(--line);
+    font-size:13.5px;
+  }
+  .roster-list li:last-child{border-bottom:0;}
+  .roster-list .who{flex:0 0 92px; font-weight:600; color:var(--ink);}
+  .roster-list .what{color:var(--muted); line-height:1.4;}
+  .roster-list li.is-me .who{color:var(--accent);}
+  .roster-list li.is-me .who::after{
+    content:' (you)'; font-weight:400; font-size:11px; color:var(--muted);
+  }
+  .roster-empty{font-size:13px; color:var(--muted); margin:0;}
+  .roster-pending{margin-top:16px; padding-top:14px; border-top:1px solid var(--line);}
+  .chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
+  .chip{
+    font-size:12px; padding:4px 10px; border-radius:999px;
+    background:rgba(34,32,28,0.06); color:var(--muted);
+  }
+  .chip.is-me{background:rgba(226,166,59,0.18); color:#8A6114; font-weight:600;}
+  .roster-totals{margin-top:16px; padding-top:14px; border-top:1px solid var(--line);}
+  .tally{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
+  .tally span{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11.5px; padding:4px 9px; border-radius:8px;
+    background:rgba(79,122,91,0.12); color:#3D5E47;
+  }
+  .tally b{font-weight:600;}
+
   .card-foot{
     display:flex;
     align-items:center;
@@ -317,11 +363,11 @@
     </select>
   </div>
 
-  <div id="stack" class="stack">
-    <div class="skeleton"></div>
-    <div class="skeleton"></div>
+  <div id="stack" class="stack single">
     <div class="skeleton"></div>
   </div>
+
+  <div id="roster"></div>
 </div>
 
 <footer>
@@ -333,10 +379,11 @@
 
 <script>
 // ====== CONFIGURE THIS ======
-const API_URL = "https://script.google.com/macros/s/AKfycbyxhdH8ZGx82krLpUrxffPewpe-kJ4bi2SD36s-iiXh-aVvUtL-2Fe8du4JO15UoJiG/exec";
+const API_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
 // =============================
 
 const stackEl = document.getElementById('stack');
+const rosterEl = document.getElementById('roster');
 const nameSelect = document.getElementById('nameSelect');
 const toastEl = document.getElementById('toast');
 
@@ -408,6 +455,7 @@ function render(state){
         '<h2>No dinner is taking orders</h2>' +
         '<p>' + body + '</p>' +
       '</div>';
+    rosterEl.innerHTML = '';
     return;
   }
 
@@ -490,6 +538,71 @@ function render(state){
   });
 
   wireCard();
+  renderRoster(days[0]);
+}
+
+// One person's order as a single readable line.
+function describeOrder(o){
+  if (o.mealType !== EVERYDAY) return escapeHtml(o.mealType);
+  const bits = [];
+  if (o.protein) bits.push(escapeHtml(o.protein));
+  if (o.carbs && o.carbs.length) bits.push(o.carbs.map(escapeHtml).join(' + '));
+  return bits.length ? bits.join(' \u00b7 ') : '\u2014';
+}
+
+function tallyChips(counts){
+  const keys = Object.keys(counts || {});
+  if (!keys.length) return '';
+  keys.sort((a,b) => counts[b] - counts[a] || a.localeCompare(b));
+  return keys.map(k => '<span>' + escapeHtml(k) + ' <b>' + counts[k] + '</b></span>').join('');
+}
+
+function renderRoster(day){
+  if (!day){ rosterEl.innerHTML = ''; return; }
+  const me = getSelectedName();
+  const orders = day.orders || [];
+  const pending = day.pending || [];
+  const total = day.totalPeople || (orders.length + pending.length);
+  const t = day.totals || {};
+
+  const listHtml = orders.length
+    ? '<ul class="roster-list">' + orders.map(o =>
+        '<li' + (o.name === me ? ' class="is-me"' : '') + '>' +
+          '<span class="who">' + escapeHtml(o.name) + '</span>' +
+          '<span class="what">' + describeOrder(o) + '</span>' +
+        '</li>').join('') + '</ul>'
+    : '<p class="roster-empty">Nobody has ordered yet \u2014 be first.</p>';
+
+  const pendingHtml = pending.length
+    ? '<div class="roster-pending">' +
+        '<span class="group-label">Waiting on <span class="group-hint">' + pending.length + ' left</span></span>' +
+        '<div class="chips">' + pending.map(n =>
+          '<span class="chip' + (n === me ? ' is-me' : '') + '">' + escapeHtml(n) + '</span>'
+        ).join('') + '</div>' +
+      '</div>'
+    : '<div class="roster-pending"><span class="group-label">Everyone is in \u2713</span></div>';
+
+  const mealChips = tallyChips(t.meals);
+  const protChips = tallyChips(t.proteins);
+  const carbChips = tallyChips(t.carbs);
+  const totalsHtml = (mealChips || protChips || carbChips)
+    ? '<div class="roster-totals">' +
+        '<span class="group-label">Totals</span>' +
+        (mealChips ? '<div class="tally">' + mealChips + '</div>' : '') +
+        (protChips ? '<div class="tally">' + protChips + '</div>' : '') +
+        (carbChips ? '<div class="tally">' + carbChips + '</div>' : '') +
+      '</div>'
+    : '';
+
+  rosterEl.className = 'roster';
+  rosterEl.innerHTML =
+    '<div class="roster-card">' +
+      '<div class="roster-head">' +
+        '<span class="group-label">Orders for ' + escapeHtml(day.label) + '</span>' +
+        '<span class="roster-count">' + orders.length + ' / ' + total + '</span>' +
+      '</div>' +
+      listHtml + pendingHtml + totalsHtml +
+    '</div>';
 }
 
 function wireCard(){
