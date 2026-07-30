@@ -404,10 +404,36 @@ function escapeHtml(s){
 }
 
 async function fetchState(){
+  if (!API_URL || API_URL.indexOf('PASTE_YOUR') === 0){
+    throw new Error('API_URL is still the placeholder in index.html — paste your /exec URL in.');
+  }
+  if (API_URL.indexOf('/exec') === -1){
+    throw new Error('API_URL should end in /exec (a /dev URL will not work from a website).');
+  }
+
   const name = getSelectedName();
   const url = API_URL + '?action=state' + (name ? ('&name=' + encodeURIComponent(name)) : '');
-  const res = await fetch(url);
-  return await res.json();
+
+  let res;
+  try {
+    res = await fetch(url);
+  } catch (netErr){
+    throw new Error('Network request blocked or failed. Check the URL, and that the Web App is deployed. (' + netErr.message + ')');
+  }
+
+  // Read as text first: Apps Script returns an HTML page on auth failure, and
+  // res.json() would just throw "Unexpected token <" and hide the real cause.
+  const body = await res.text();
+  try {
+    return JSON.parse(body);
+  } catch (parseErr){
+    const looksLikeLogin = /accounts\.google\.com|<html|Sign in/i.test(body);
+    throw new Error(
+      looksLikeLogin
+        ? 'The server returned a Google sign-in page instead of data. Redeploy the Web App with "Who has access: Anyone".'
+        : 'The server did not return JSON (HTTP ' + res.status + '). First 120 chars: ' + body.slice(0, 120)
+    );
+  }
 }
 
 function renderNames(names){
@@ -696,11 +722,33 @@ async function saveDay(btn){
   }
 }
 
+function showLoadError(headline, detail){
+  stackEl.className = 'stack single';
+  stackEl.innerHTML =
+    '<div class="empty">' +
+      '<div class="kicker">Something went wrong</div>' +
+      '<h2>' + escapeHtml(headline) + '</h2>' +
+      '<p>' + escapeHtml(detail || '') + '</p>' +
+      '<p style="margin-top:10px;font-size:12px;">Full details are in the browser console.</p>' +
+    '</div>';
+  rosterEl.innerHTML = '';
+}
+
 async function loadState(){
+  let state;
   try {
-    render(await fetchState());
-  } catch(err){
-    stackEl.innerHTML = '<p style="color:#fff;text-align:center;">Could not load the menu. Please refresh.</p>';
+    state = await fetchState();
+  } catch (err){
+    console.error('[Dinner Order] Could not load state:', err);
+    showLoadError('Could not load the menu', err.message);
+    return;
+  }
+  // Kept separate so a drawing bug is never reported as a loading failure.
+  try {
+    render(state);
+  } catch (err){
+    console.error('[Dinner Order] Loaded fine, but rendering failed:', err, state);
+    showLoadError('Loaded, but could not draw the page', err.message);
   }
 }
 
