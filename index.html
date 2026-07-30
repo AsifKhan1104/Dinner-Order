@@ -242,6 +242,42 @@
   .specials-note[hidden]{display:none;}
   .divider{height:1px;background:var(--line);margin:16px 0 14px;}
 
+  /* ---- Locked-in (read-only) panel ---- */
+  .confirmed{margin:0 0 18px;}
+  .confirmed-card{
+    background:rgba(79,122,91,0.10);
+    border:1px solid rgba(79,122,91,0.22);
+    border-radius:var(--radius);
+    padding:18px 20px 16px;
+  }
+  .confirmed-head{
+    display:flex; align-items:flex-start; justify-content:space-between;
+    gap:12px; margin-bottom:12px;
+  }
+  .confirmed-day{
+    font-family:'Fraunces', Georgia, serif;
+    font-size:16px; font-weight:600; color:#2F4A38; margin-top:3px;
+  }
+  .confirmed-lock{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px; text-transform:uppercase; letter-spacing:0.12em;
+    color:#4F7A5B;
+  }
+  .confirmed-mine{
+    background:#fff; border-radius:12px;
+    padding:11px 14px; margin-bottom:12px;
+    font-size:14px; color:var(--ink);
+  }
+  .confirmed-mine b{color:var(--green);}
+  .confirmed-mine.none{color:#8A6114; background:rgba(226,166,59,0.14);}
+  .confirmed-card .roster-list li{border-bottom-color:rgba(79,122,91,0.16);}
+  .confirmed-toggle{
+    margin-top:4px; background:none; border:0; padding:6px 0;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10.5px; text-transform:uppercase; letter-spacing:0.12em;
+    color:#4F7A5B; cursor:pointer;
+  }
+
   /* ---- Live order roster ---- */
   .roster{margin:18px 0 0;}
   .roster-card{
@@ -381,7 +417,7 @@
       <circle cx="48" cy="30" r="3" fill="#E2A63B"/>
     </svg>
     <h1>Dinner Order</h1>
-    <p class="sub">One dinner at a time. Orders close at <b>10 PM IST</b> the night before, and the kitchen list goes out at <b>11 PM IST</b>.</p>
+    <p class="sub" id="sub">One dinner at a time. Orders close the night before.</p>
   </header>
 
   <div class="name-bar">
@@ -390,6 +426,8 @@
       <option value="">Choose your name…</option>
     </select>
   </div>
+
+  <div id="confirmed"></div>
 
   <div id="stack" class="stack single">
     <div class="skeleton"></div>
@@ -412,12 +450,16 @@ const API_URL = "https://script.google.com/macros/s/AKfycbyxhdH8ZGx82krLpUrxffPe
 
 const stackEl = document.getElementById('stack');
 const rosterEl = document.getElementById('roster');
+const confirmedEl = document.getElementById('confirmed');
+const subEl = document.getElementById('sub');
 const nameSelect = document.getElementById('nameSelect');
 const toastEl = document.getElementById('toast');
 
 let STATE = null;        // last fetched state from server
 let EVERYDAY = 'Everyday Indian';
 let MEAL_ORDER = [];   // canonical order from the server, so rows never reshuffle
+let CUT_LABEL = '10:30 PM';
+let confirmedOpen = false;   // is the full locked-in list expanded?
 let dirty = false;       // true while there are unsaved selections on screen
 
 function showToast(msg){
@@ -484,6 +526,12 @@ function render(state){
   EVERYDAY = state.everydayLabel || EVERYDAY;
   const mealTypes = state.mealTypes || [EVERYDAY];
   MEAL_ORDER = mealTypes.slice();
+
+  CUT_LABEL = state.cutoffLabel || CUT_LABEL;
+  const cut = CUT_LABEL;
+  subEl.innerHTML = 'One dinner at a time. Orders close at <b>' + escapeHtml(cut) +
+                    ' IST</b> the night before, and the kitchen list goes out shortly after.';
+  renderConfirmed(state.confirmed);
   renderNames(state.names || []);
   dirty = false;
 
@@ -496,7 +544,9 @@ function render(state){
     let body;
     if (nextUp){
       body = '<b>' + escapeHtml(nextUp.label) + '</b> (' + escapeHtml(nextUp.dateDisplay) + ') opens for orders at ' +
-             (nextUp.opensIsToday ? '<b>10 PM tonight</b>.' : '<b>10 PM on ' + escapeHtml(nextUp.opensDisplay) + '</b>.') +
+             (nextUp.opensIsToday
+                ? '<b>' + escapeHtml(CUT_LABEL) + ' tonight</b>.'
+                : '<b>' + escapeHtml(CUT_LABEL) + ' on ' + escapeHtml(nextUp.opensDisplay) + '</b>.') +
              '<br>You\'ll have 24 hours to pick once it does.';
     } else if (configured === 0){
       body = 'The menu hasn\'t been set up yet. Check back once the organiser adds this week\'s dinners.';
@@ -512,7 +562,7 @@ function render(state){
         '<p>' + body + '</p>' +
       '</div>';
     rosterEl.innerHTML = '';
-    return;
+    return;   // renderConfirmed already ran, so a locked-in day still shows
   }
 
   stackEl.innerHTML = '';
@@ -581,8 +631,8 @@ function render(state){
           <span class="deadline">${day.locked
               ? 'Locked — cutoff passed'
               : (day.cutoffIsToday
-                  ? 'Closes 10 PM IST tonight'
-                  : 'Closes 10 PM IST, ' + escapeHtml(day.cutoffDisplay || ''))}</span>
+                  ? 'Closes ' + CUT_LABEL + ' IST tonight'
+                  : 'Closes ' + CUT_LABEL + ' IST, ' + escapeHtml(day.cutoffDisplay || ''))}</span>
           <button class="save-btn" data-day="${escapeHtml(day.key)}" ${day.locked || !hasName ? 'disabled' : ''}>
             ${day.locked ? 'Closed' : (done ? 'Saved ✓' : 'Save')}
           </button>
@@ -595,6 +645,53 @@ function render(state){
 
   wireCard();
   renderRoster(days[0]);
+}
+
+// Read-only panel for the dinner whose cutoff has passed but which hasn't been
+// eaten yet — so people can confirm what they ordered after the window closed.
+function renderConfirmed(day){
+  if (!day){ confirmedEl.innerHTML = ''; confirmedEl.className = ''; return; }
+  const me = getSelectedName();
+  const orders = day.orders || [];
+  const total = day.totalPeople || orders.length;
+
+  let mineHtml = '';
+  if (me){
+    const mine = orders.filter(o => o.name === me)[0];
+    mineHtml = mine
+      ? '<div class="confirmed-mine">Your order: <b>' + describeOrder(mine) + '</b></div>'
+      : '<div class="confirmed-mine none">You did not order for this day.</div>';
+  }
+
+  const listHtml = confirmedOpen && orders.length
+    ? '<ul class="roster-list">' + orders.map(o =>
+        '<li' + (o.name === me ? ' class="is-me"' : '') + '>' +
+          '<span class="who">' + escapeHtml(o.name) + '</span>' +
+          '<span class="what">' + describeOrder(o) + '</span>' +
+        '</li>').join('') + '</ul>'
+    : '';
+
+  confirmedEl.className = 'confirmed';
+  confirmedEl.innerHTML =
+    '<div class="confirmed-card">' +
+      '<div class="confirmed-head">' +
+        '<div>' +
+          '<div class="confirmed-lock">Locked in \u00b7 no changes</div>' +
+          '<div class="confirmed-day">' + escapeHtml(day.label) + ' \u00b7 ' + escapeHtml(day.dateDisplay) + '</div>' +
+        '</div>' +
+        '<span class="roster-count">' + orders.length + ' / ' + total + '</span>' +
+      '</div>' +
+      mineHtml +
+      listHtml +
+      (orders.length
+        ? '<button class="confirmed-toggle" id="confToggle">' +
+            (confirmedOpen ? 'Hide the full list' : 'Show all ' + orders.length + ' orders') +
+          '</button>'
+        : '') +
+    '</div>';
+
+  const btn = document.getElementById('confToggle');
+  if (btn) btn.addEventListener('click', () => { confirmedOpen = !confirmedOpen; renderConfirmed(day); });
 }
 
 // One person's order as a single readable line.
@@ -808,7 +905,7 @@ async function loadState(){
 nameSelect.addEventListener('change', loadState);
 
 loadState();
-// Refresh every 60s so the lock state updates live near 10 PM —
+// Refresh every 60s so the lock state updates live near the cutoff —
 // but never while there are unsaved picks on screen, or we'd wipe them.
 setInterval(() => { if (!dirty) loadState(); }, 60000);
 </script>
