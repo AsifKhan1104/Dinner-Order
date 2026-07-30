@@ -280,13 +280,41 @@
   }
   .chip.is-me{background:rgba(226,166,59,0.18); color:#8A6114; font-weight:600;}
   .roster-totals{margin-top:16px; padding-top:14px; border-top:1px solid var(--line);}
-  .tally{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
-  .tally span{
-    font-family:'IBM Plex Mono', monospace;
-    font-size:11.5px; padding:4px 9px; border-radius:8px;
-    background:rgba(79,122,91,0.12); color:#3D5E47;
+  .tot-row{
+    display:flex; align-items:baseline; justify-content:space-between;
+    gap:12px; padding:8px 0 7px;
+    border-bottom:1px solid var(--line);
   }
-  .tally b{font-weight:600;}
+  .tot-row:last-child{border-bottom:0;}
+  .tot-name{font-size:13.5px; font-weight:600; color:var(--ink);}
+  .tot-num{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13.5px; font-weight:600; color:var(--accent);
+    font-variant-numeric:tabular-nums;
+    flex:0 0 auto;
+  }
+  /* Breakdown rows, indented under the meal they belong to */
+  .tot-sub{
+    display:flex; align-items:baseline; gap:10px;
+    padding:5px 0 5px 16px;
+    border-left:2px solid rgba(226,166,59,0.35);
+    margin-left:2px;
+  }
+  .tot-sub + .tot-row{margin-top:8px;}
+  .tot-sub-label{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px; text-transform:uppercase; letter-spacing:0.1em;
+    color:var(--muted); flex:0 0 52px; padding-top:1px;
+  }
+  .tot-sub-val{
+    font-size:12.5px; color:var(--ink);
+    font-variant-numeric:tabular-nums; line-height:1.5;
+  }
+  .tot-sub-val b{
+    font-family:'IBM Plex Mono', monospace;
+    font-weight:600; color:var(--green);
+  }
+  .tot-sub-val i{color:var(--muted); font-style:normal; margin:0 5px;}
 
   .card-foot{
     display:flex;
@@ -379,7 +407,7 @@
 
 <script>
 // ====== CONFIGURE THIS ======
-const API_URL = "https://script.google.com/macros/s/AKfycbyxhdH8ZGx82krLpUrxffPewpe-kJ4bi2SD36s-iiXh-aVvUtL-2Fe8du4JO15UoJiG/exec";
+const API_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
 // =============================
 
 const stackEl = document.getElementById('stack');
@@ -389,6 +417,7 @@ const toastEl = document.getElementById('toast');
 
 let STATE = null;        // last fetched state from server
 let EVERYDAY = 'Everyday Indian';
+let MEAL_ORDER = [];   // canonical order from the server, so rows never reshuffle
 let dirty = false;       // true while there are unsaved selections on screen
 
 function showToast(msg){
@@ -454,6 +483,7 @@ function render(state){
   STATE = state;
   EVERYDAY = state.everydayLabel || EVERYDAY;
   const mealTypes = state.mealTypes || [EVERYDAY];
+  MEAL_ORDER = mealTypes.slice();
   renderNames(state.names || []);
   dirty = false;
 
@@ -576,11 +606,43 @@ function describeOrder(o){
   return bits.length ? bits.join(' \u00b7 ') : '\u2014';
 }
 
-function tallyChips(counts){
+// "Rice 1 · Roti 1" — highest count first, ties alphabetical.
+function inlineCounts(counts){
   const keys = Object.keys(counts || {});
   if (!keys.length) return '';
   keys.sort((a,b) => counts[b] - counts[a] || a.localeCompare(b));
-  return keys.map(k => '<span>' + escapeHtml(k) + ' <b>' + counts[k] + '</b></span>').join('');
+  return keys.map(k => escapeHtml(k) + ' <b>' + counts[k] + '</b>')
+             .join('<i>\u00b7</i>');
+}
+
+function totalsBlock(t, everydayCount){
+  const meals = t.meals || {};
+  // Canonical order, not count order: Everyday Indian stays first so its
+  // breakdown sits directly beneath it.
+  const ordered = MEAL_ORDER.filter(m => meals[m]);
+  Object.keys(meals).forEach(m => { if (ordered.indexOf(m) === -1) ordered.push(m); });
+  if (!ordered.length) return '';
+
+  let rows = '';
+  ordered.forEach(m => {
+    rows += '<div class="tot-row">' +
+              '<span class="tot-name">' + escapeHtml(m) + '</span>' +
+              '<span class="tot-num">' + meals[m] + '</span>' +
+            '</div>';
+    if (m === EVERYDAY && everydayCount){
+      const prot = inlineCounts(t.proteins);
+      const carb = inlineCounts(t.carbs);
+      if (prot) rows += '<div class="tot-sub"><span class="tot-sub-label">Protein</span>' +
+                        '<span class="tot-sub-val">' + prot + '</span></div>';
+      if (carb) rows += '<div class="tot-sub"><span class="tot-sub-label">Carbs</span>' +
+                        '<span class="tot-sub-val">' + carb + '</span></div>';
+    }
+  });
+
+  return '<div class="roster-totals">' +
+           '<span class="group-label">Totals</span>' +
+           rows +
+         '</div>';
 }
 
 function renderRoster(day){
@@ -608,17 +670,8 @@ function renderRoster(day){
       '</div>'
     : '<div class="roster-pending"><span class="group-label">Everyone is in \u2713</span></div>';
 
-  const mealChips = tallyChips(t.meals);
-  const protChips = tallyChips(t.proteins);
-  const carbChips = tallyChips(t.carbs);
-  const totalsHtml = (mealChips || protChips || carbChips)
-    ? '<div class="roster-totals">' +
-        '<span class="group-label">Totals</span>' +
-        (mealChips ? '<div class="tally">' + mealChips + '</div>' : '') +
-        (protChips ? '<div class="tally">' + protChips + '</div>' : '') +
-        (carbChips ? '<div class="tally">' + carbChips + '</div>' : '') +
-      '</div>'
-    : '';
+  const everydayCount = orders.filter(o => o.mealType === EVERYDAY).length;
+  const totalsHtml = orders.length ? totalsBlock(t, everydayCount) : '';
 
   rosterEl.className = 'roster';
   rosterEl.innerHTML =
