@@ -256,7 +256,7 @@
   }
   .confirmed-day{
     font-family:'Fraunces', Georgia, serif;
-    font-size:16px; font-weight:600; color:#2F4A38; margin-top:3px;
+    font-size:16px; font-weight:600; color:#DCE6DC; margin-top:3px;
   }
   .confirmed-lock{
     font-family:'IBM Plex Mono', monospace;
@@ -271,6 +271,11 @@
   .confirmed-mine b{color:var(--green);}
   .confirmed-mine.none{color:#8A6114; background:rgba(226,166,59,0.14);}
   .confirmed-card .roster-list li{border-bottom-color:rgba(79,122,91,0.16);}
+  /* This panel sits on a dark green card, so the light-card "ink" colours have no
+     contrast. Lift names and their descriptions to readable tones here only —
+     the live roster below still uses a cream card, so its dark text is fine. */
+  .confirmed-card .roster-list .who{color:#F1ECDF;}
+  .confirmed-card .roster-list .what{color:#AEBBAC;}
   .confirmed-toggle{
     margin-top:4px; background:none; border:0; padding:6px 0;
     font-family:'IBM Plex Mono', monospace;
@@ -474,6 +479,21 @@ function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// Find a person's saved order for a day out of the already-cached roster, so
+// changing the name picker needs no server round-trip. Every day object carries
+// the full `orders` list (built server-side for everyone regardless of name),
+// so the selected person's pick is always right here in memory.
+function findMine(day, name){
+  if (!name || !day) return null;
+  const o = (day.orders || []).filter(x => x.name === name)[0];
+  if (!o) return null;
+  return {
+    mealType: o.mealType || '',
+    protein: o.protein || '',
+    carbs: (o.carbs || []).slice()
+  };
+}
+
 async function fetchState(){
   if (!API_URL || API_URL.indexOf('PASTE_YOUR') === 0){
     throw new Error('API_URL is still the placeholder in index.html — paste your /exec URL in.');
@@ -567,7 +587,7 @@ function render(state){
 
   stackEl.innerHTML = '';
   days.forEach(day => {
-    const mine = day.mine || {};
+    const mine = findMine(day, getSelectedName()) || {};
     const mineMeal = mine.mealType || '';
     const mineProtein = mine.protein || '';
     const mineCarbs = mine.carbs || [];
@@ -645,6 +665,14 @@ function render(state){
 
   wireCard();
   renderRoster(days[0]);
+}
+
+// Re-draw from the cached STATE without touching the server. Used when the only
+// thing that changed is which name is selected — the menu, roster and totals are
+// all name-independent and already in memory.
+function rerender(){
+  if (STATE) render(STATE);
+  else loadState();
 }
 
 // Read-only panel for the dinner whose cutoff has passed but which hasn't been
@@ -902,7 +930,9 @@ async function loadState(){
   }
 }
 
-nameSelect.addEventListener('change', loadState);
+// Name changes redraw instantly from cached data — no server call. If somehow
+// nothing is cached yet (very first paint), rerender falls back to a fetch.
+nameSelect.addEventListener('change', rerender);
 
 loadState();
 // Refresh every 60s so the lock state updates live near the cutoff —
