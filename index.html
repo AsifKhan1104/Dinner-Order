@@ -883,11 +883,15 @@ async function saveDay(btn){
     const data = await res.json();
     if (data.ok){
       dirty = false;
-      btn.classList.add('saved');
-      btn.textContent = 'Saved ✓';
-      btn.disabled = false;
+      // The write landed and Google confirmed it. Fold our own order into the
+      // cached STATE and redraw instantly — no second round-trip needed for a
+      // row we already know. render() rebuilds this card, so it comes back with
+      // the pills active and the button showing "Saved ✓".
+      applySavedOrder(dayKey, name, mealType, protein, carbs);
+      render(STATE);
       showToast('Saved for ' + name);
-      loadState();
+      // Then quietly pull everyone else's latest in the background.
+      quietRefresh();
     } else {
       showToast(data.error || 'Could not save — try again');
       btn.disabled = false;
@@ -897,6 +901,69 @@ async function saveDay(btn){
     showToast('Network error — check connection');
     btn.disabled = false;
     btn.textContent = 'Save';
+  }
+}
+
+// Fold a just-saved order into the cached STATE so the roster and totals update
+// on screen immediately, without re-fetching. This mirrors the server's own
+// roster logic exactly: the list follows the Names-tab order, then the meal /
+// protein / carb totals are recomputed from scratch.
+function applySavedOrder(dayKey, name, mealType, protein, carbs){
+  if (!STATE || !STATE.days) return;
+  const day = STATE.days.filter(d => d.key === dayKey)[0];
+  if (!day) return;
+
+  // Index existing orders by name, then overwrite (or add) this person's.
+  const byName = {};
+  (day.orders || []).forEach(o => { byName[o.name] = o; });
+  byName[name] = {
+    name: name,
+    mealType: mealType,
+    protein: mealType === EVERYDAY ? protein : '',
+    carbs: mealType === EVERYDAY ? (carbs || []).slice() : []
+  };
+
+  // Rebuild orders + pending in the stable Names-tab order.
+  const names = STATE.names || [];
+  const orders = [];
+  const pending = [];
+  names.forEach(n => { if (byName[n]) orders.push(byName[n]); else pending.push(n); });
+  // Anyone with an order but not on the Names tab (renamed/removed) still shows.
+  Object.keys(byName).forEach(n => { if (names.indexOf(n) === -1) orders.push(byName[n]); });
+
+  // Recompute totals the same way the server does.
+  const meals = {}, proteins = {}, carbTotals = {};
+  orders.forEach(o => {
+    if (o.mealType) meals[o.mealType] = (meals[o.mealType] || 0) + 1;
+    if (o.mealType === EVERYDAY){
+      if (o.protein) proteins[o.protein] = (proteins[o.protein] || 0) + 1;
+      (o.carbs || []).forEach(c => { carbTotals[c] = (carbTotals[c] || 0) + 1; });
+    }
+  });
+
+  day.orders = orders;
+  day.pending = pending;
+  day.totalPeople = names.length || orders.length;
+  day.totals = { meals: meals, proteins: proteins, carbs: carbTotals };
+}
+
+// Silent background sync after a save: pull the latest state and redraw, but
+// never show the loading skeleton, and never clobber picks the user has since
+// started making. A failed background refresh is swallowed — the user already
+// has a correct, saved view, so there's nothing to alarm them about.
+async function quietRefresh(){
+  let state;
+  try {
+    state = await fetchState();
+  } catch (err){
+    console.warn('[Dinner Order] Background refresh failed (keeping current view):', err);
+    return;
+  }
+  if (dirty) return; // user began editing again while we were fetching — leave them be
+  try {
+    render(state);
+  } catch (err){
+    console.warn('[Dinner Order] Background refresh render failed (keeping current view):', err);
   }
 }
 
