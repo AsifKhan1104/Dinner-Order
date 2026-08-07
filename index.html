@@ -174,28 +174,44 @@
   .badge.saved{background:rgba(226,166,59,0.22); color:var(--accent-ink);}
 
   .dish{
+    margin:8px 0 16px;
+  }
+  /* Label on its own line, link on the next. */
+  .dish-text{
+    display:block;
     font-size:14px;
     line-height:1.55;
     color:#4B463D;
-    margin:8px 0 16px;
   }
-  /* The dish line is now a pointer to the live menu, so the URL has to look and
-     behave like a link — underlined, in the accent ink, and a comfortable tap
-     target on a phone. overflow-wrap stops a long URL blowing out the card. */
+  /* The link is a chip rather than underlined text: a bigger tap target on a
+     phone, and clearly the one thing on the card that leaves the page. */
   .dish-link{
-    color:var(--accent-ink);
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    max-width:100%;
+    margin-top:7px;
+    padding:8px 14px;
+    border-radius:100px;
+    background:rgba(226,166,59,0.16);
+    border:1px solid rgba(226,166,59,0.45);
+    color:#7A5310;
+    font-family:'Work Sans', sans-serif;
     font-weight:600;
-    text-decoration:underline;
-    text-underline-offset:2px;
-    text-decoration-color:rgba(226,166,59,0.7);
+    font-size:13.5px;
+    text-decoration:none;
     overflow-wrap:anywhere;
+    transition:background .15s ease, border-color .15s ease;
   }
-  .dish-link:hover{text-decoration-color:var(--accent-ink);}
+  .dish-link:hover{
+    background:rgba(226,166,59,0.28);
+    border-color:var(--accent);
+  }
   .dish-link:focus-visible{
     outline:2px solid var(--accent);
     outline-offset:2px;
-    border-radius:4px;
   }
+  .dish-arrow{font-size:12px; opacity:.75; flex:0 0 auto;}
 
   .group{margin-bottom:14px;}
   .group-label{
@@ -461,7 +477,7 @@
 <footer>
   Dishes change weekly — the menu link on the card always shows the current one.<br>
   Trouble saving? Ask the organiser to check the sheet connection.
-  <!-- WAS: written when dish text was typed into the sheet by hand.
+  <!-- WAS: written when dish text was typed into the sheet by hand each week.
   Menu items are set by whoever runs this list — check back each week.<br>
   Trouble saving? Ask the organiser to check the sheet connection.
   -->
@@ -500,27 +516,42 @@ function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-// The dish line. Dishes rotate every week, so instead of re-typing them into the
-// sheet the card carries one fixed line pointing at the live Wellfed menu. The
-// server sends the prefix, the full URL and a shortened label; we assemble a real
-// <a> here so the link is tappable rather than grey text.
+// SHOW_FULL_URL: false trims "https://www." so the chip stays on one line. The
+// href always uses the full URL either way, so nothing breaks if you flip this.
+const SHOW_FULL_URL = false;
+
+// The dish line comes from MenuConfig column D. The wording goes on its own line
+// and any http(s) URL becomes a chip-style link below it. Everything else is
+// plain escaped text, so a day can carry real dish text instead of the link.
 //
-// Only https / http URLs are turned into links, so a stray sheet value can never
-// become a javascript: link.
-//
-// WAS: the per-day dish text from MenuConfig column D, rendered as plain text.
-// To restore, replace this whole function body with:
+// WAS: plain text only, before the sheet held a menu link.
+// To restore, replace this whole body with:
 //   return escapeHtml(day.dish || '');
-// (and revert the two matching spots in Code.gs).
 function dishHtml(day){
-  const url = String(day.menuUrl || '');
-  if (!/^https?:\/\//i.test(url)) return escapeHtml(day.dish || '');
-  const prefix = day.dishPrefix || '';
-  const label = day.menuLabel || url;
-  return escapeHtml(prefix) +
-    '<a class="dish-link" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' +
-      escapeHtml(label) +
-    '</a>';
+  const text = String(day.dish || '');
+  if (!text) return '';
+  const hasUrl = /https?:\/\//i.test(text);
+  // The capture group makes split() keep the URLs as their own array entries.
+  return text.split(/(https?:\/\/[^\s<>"']+)/g).map(function(part){
+    if (!/^https?:\/\//i.test(part)){
+      const t = part.trim();
+      if (!t) return '';
+      // Only force a line break when there's actually a link to break before.
+      return hasUrl ? '<span class="dish-text">' + escapeHtml(t) + '</span>'
+                    : escapeHtml(t);
+    }
+    // A trailing full stop or bracket belongs to the sentence, not the URL.
+    const trail = (part.match(/[.,;:!?)\]]+$/) || [''])[0];
+    const url = trail ? part.slice(0, part.length - trail.length) : part;
+    const label = SHOW_FULL_URL
+      ? url
+      : url.replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/$/, '');
+    return '<a class="dish-link" href="' + escapeHtml(url) +
+           '" target="_blank" rel="noopener noreferrer">' +
+             escapeHtml(label) +
+             '<span class="dish-arrow" aria-hidden="true">\u2197</span>' +
+           '</a>' + escapeHtml(trail);
+  }).join('');
 }
 
 // Find a person's saved order for a day out of the already-cached roster, so
@@ -657,8 +688,8 @@ function render(state){
     const showEveryday = mineMeal === EVERYDAY;
     const showSpecials = !!mineMeal && mineMeal !== EVERYDAY;
 
-    // The dish line goes through dishHtml() so the menu URL renders as a real link.
-    // WAS: <div class="dish">${escapeHtml(day.dish)}</div>
+    // The dish line goes through dishHtml() so any URL in the sheet renders as a
+    // chip link on its own line. WAS: <div class="dish">${escapeHtml(day.dish)}</div>
     tier.innerHTML = `
       <div class="card" data-day="${escapeHtml(day.key)}">
         <div class="card-top">
