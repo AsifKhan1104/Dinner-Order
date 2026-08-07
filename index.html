@@ -179,6 +179,23 @@
     color:#4B463D;
     margin:8px 0 16px;
   }
+  /* The dish line is now a pointer to the live menu, so the URL has to look and
+     behave like a link — underlined, in the accent ink, and a comfortable tap
+     target on a phone. overflow-wrap stops a long URL blowing out the card. */
+  .dish-link{
+    color:var(--accent-ink);
+    font-weight:600;
+    text-decoration:underline;
+    text-underline-offset:2px;
+    text-decoration-color:rgba(226,166,59,0.7);
+    overflow-wrap:anywhere;
+  }
+  .dish-link:hover{text-decoration-color:var(--accent-ink);}
+  .dish-link:focus-visible{
+    outline:2px solid var(--accent);
+    outline-offset:2px;
+    border-radius:4px;
+  }
 
   .group{margin-bottom:14px;}
   .group-label{
@@ -442,8 +459,12 @@
 </div>
 
 <footer>
+  Dishes change weekly — the menu link on the card always shows the current one.<br>
+  Trouble saving? Ask the organiser to check the sheet connection.
+  <!-- WAS: written when dish text was typed into the sheet by hand.
   Menu items are set by whoever runs this list — check back each week.<br>
   Trouble saving? Ask the organiser to check the sheet connection.
+  -->
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -477,6 +498,29 @@ function getSelectedName(){ return nameSelect.value; }
 
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// The dish line. Dishes rotate every week, so instead of re-typing them into the
+// sheet the card carries one fixed line pointing at the live Wellfed menu. The
+// server sends the prefix, the full URL and a shortened label; we assemble a real
+// <a> here so the link is tappable rather than grey text.
+//
+// Only https / http URLs are turned into links, so a stray sheet value can never
+// become a javascript: link.
+//
+// WAS: the per-day dish text from MenuConfig column D, rendered as plain text.
+// To restore, replace this whole function body with:
+//   return escapeHtml(day.dish || '');
+// (and revert the two matching spots in Code.gs).
+function dishHtml(day){
+  const url = String(day.menuUrl || '');
+  if (!/^https?:\/\//i.test(url)) return escapeHtml(day.dish || '');
+  const prefix = day.dishPrefix || '';
+  const label = day.menuLabel || url;
+  return escapeHtml(prefix) +
+    '<a class="dish-link" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' +
+      escapeHtml(label) +
+    '</a>';
 }
 
 // Find a person's saved order for a day out of the already-cached roster, so
@@ -613,6 +657,8 @@ function render(state){
     const showEveryday = mineMeal === EVERYDAY;
     const showSpecials = !!mineMeal && mineMeal !== EVERYDAY;
 
+    // The dish line goes through dishHtml() so the menu URL renders as a real link.
+    // WAS: <div class="dish">${escapeHtml(day.dish)}</div>
     tier.innerHTML = `
       <div class="card" data-day="${escapeHtml(day.key)}">
         <div class="card-top">
@@ -624,7 +670,7 @@ function render(state){
             ${day.locked ? 'Closed' : (done ? 'Saved' : 'Open')}
           </div>
         </div>
-        <div class="dish">${escapeHtml(day.dish)}</div>
+        <div class="dish">${dishHtml(day)}</div>
 
         <div class="group">
           <span class="group-label">Meal</span>
